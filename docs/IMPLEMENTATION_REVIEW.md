@@ -26,4 +26,12 @@ Validation of the reduced build: 104 app tests and 73 owl tests passed (177 pass
 
 This removes the documented sensitive-access trigger; acceptance by Play Protect still requires testing on the phone. Keep Play Protect enabled. Phone notification widgets and other apps' media controls are unavailable in this APK. It remains an experimental build with the Linux trust limitations described below.
 
-Remaining release gate: physical Android installation, Linux boot, and permission-dialog interaction have not been tested on a phone. Do that before marking an upstream PR ready. The patch does not isolate arbitrary approved Linux commands and is not a full security audit of every third-party package or agent.
+## Android extraction regression
+
+Testing on a Samsung SM-G990E running Android 16 reproduced `chmod failed: ENOENT` during extraction. Commons Compress's `TarArchiveEntry.isFile` also returns true for links and special entries whose names do not end in `/`. The extractor deferred link creation but attempted to chmod those missing paths. It now applies modes immediately after creating directories, regular files and hard-link copies, and explicitly excludes device/FIFO entries from regular-file extraction. Symbolic links are never chmodded.
+
+The new mode-callback regression failed before the fix and passes after it. The real signed-image integration test now applies actual POSIX permissions and checks the extracted shell is executable; its previous no-op callback missed this Android failure. Validation: 107 app tests and 73 owl tests passed (180 total, none skipped), including the genuine signed image. Full release lint passed with zero errors, 57 warnings and two hints; release assembly and APK signature verification passed.
+
+The corrected full APK installed through wireless ADB on the phone without changing Play Protect settings. On-device signature verification, extraction, pacman keyring configuration and package installation completed. The app reported Arch Linux installed (2.0 GB). Its embedded terminal returned `aarch64` for `uname -m` and `codex-cli 0.162.1` for `codex --version`; launching Codex reached its interactive sign-in screen. Authentication and authenticated widget generation were not tested. The test used a supplied genuine archive/signature to avoid another full download. The temporary screen-timeout adjustment was restored afterward.
+
+Remaining release gate: physical-phone widget permission-dialog interaction checks before marking an upstream PR ready. Notification/media behavior, physical-keyboard interaction and authenticated agent work also remain untested. The patch does not isolate arbitrary approved Linux commands and is not a full security audit of every third-party package or agent.

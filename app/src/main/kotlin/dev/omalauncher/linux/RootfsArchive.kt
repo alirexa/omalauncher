@@ -1,6 +1,7 @@
 package dev.omalauncher.linux
 
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.tar.TarConstants
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
@@ -50,7 +51,10 @@ internal object RootfsArchive {
                 }
                 Files.createDirectories(out.parent)
                 when {
-                    entry.isDirectory -> Files.createDirectories(out)
+                    entry.isDirectory -> {
+                        Files.createDirectories(out)
+                        mode(out.toFile(), entry.mode)
+                    }
                     entry.isSymbolicLink -> {
                         check(!Files.exists(out, NOFOLLOW_LINKS)) { "Archive link replaces a directory" }
                         val target = if (entry.linkName.startsWith('/')) destination(entry.linkName, true) else out.parent.resolve(entry.linkName).normalize()
@@ -63,14 +67,16 @@ internal object RootfsArchive {
                         links[out] = destination(entry.linkName.removePrefix("./")) to false
                         linkModes[out] = entry.mode
                     }
-                    entry.isFile -> {
+                    // isFile also returns true for links/devices with names not ending in '/'.
+                    // Only materialize regular/sparse files and chmod them after they exist.
+                    entry.linkFlag == TarConstants.LF_NORMAL || entry.linkFlag == TarConstants.LF_OLDNORM || entry.isSparse -> {
                         check(entry.size in 0..MAX_FILE_BYTES && entry.size <= maxTotalBytes - total) { "Linux archive exceeds size limits" }
                         total += entry.size
                         Files.newOutputStream(out, java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE).use { tar.copyTo(it) }
+                        mode(out.toFile(), entry.mode)
                     }
                     else -> continue // No devices, FIFOs, or sockets in Android storage.
                 }
-                if (entry.isFile || entry.isDirectory) mode(out.toFile(), entry.mode)
                 if (count % 500 == 0) progress(count)
             }
         }

@@ -27,8 +27,10 @@ permissions. Leave them off unless you need those features. Granting Android
 notification access does not automatically grant it to each widget.
 
 This APK is a signed release build with debugging disabled. Tests validate the
-security changes and extraction of an authentic Arch image; a physical-phone
-boot/install test is still required. It does not provide isolation for arbitrary
+security changes and extraction of an authentic Arch image. The full APK was
+installed through wireless ADB on a Samsung SM-G990E running Android 16; Linux
+setup completed, the embedded shell ran commands, and Codex opened its sign-in
+screen. Authentication and widget generation remain untested. It does not provide isolation for arbitrary
 Linux programs or guarantee every third-party package/agent is safe.
 
 ## If Play Protect blocks installation
@@ -51,8 +53,12 @@ fork previews, so no uninstall is needed to replace a fork preview.
 Keep Play Protect enabled. Removing this capability addresses the documented
 permission trigger; it does not guarantee Google will accept the APK. If it is
 still blocked, record the warning and use Google's review/appeal process rather
-than bypassing the protection. Retaining notification access requires a suitable
-distribution/review route; do not assume sideloading the full APK will work.
+than disabling the protection. For developer testing, the full APK was successfully
+installed with `adb install -r omalauncher-security.apk` over an authorized wireless
+debugging connection, without changing Play Protect settings. This retains the
+notification/music capabilities, though their permission flow and behavior still
+need testing. This result does not guarantee browser installation or acceptance
+on other phones; general distribution still needs a suitable review route.
 
 ## Building and signing your own copy
 

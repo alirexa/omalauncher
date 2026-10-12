@@ -35,6 +35,35 @@ class RootfsArchiveTest {
         assertArrayEquals(File(root, "usr/bin/sh").readBytes(), File(root, "bin/sh").readBytes())
         assertFalse(Files.readSymbolicLink(File(root, "bin").toPath()).isAbsolute)
     }
+    @Test fun appliesModesOnlyToMaterializedDirectoriesAndFiles() {
+        val root = temp.newFolder()
+        val modes = mutableListOf<String>()
+        val bytes = archive(
+            symbolic("bin", "/usr/bin"),
+            hard("usr/bin/bash", "usr/bin/sh").apply { mode = 0x1ed },
+            TarArchiveEntry("usr/bin/").apply { mode = 0x1ed },
+            regular("usr/bin/sh").apply { mode = 0x1ed },
+        )
+        RootfsArchive.extract(bytes.inputStream(), root, mode = { file, mode ->
+            assertTrue("chmod target must already exist: $file", Files.exists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            assertFalse("chmod must not follow a symbolic link", Files.isSymbolicLink(file.toPath()))
+            assertEquals(0x1ed, mode)
+            modes += file.relativeTo(root.canonicalFile).path
+        })
+        assertEquals(listOf("usr/bin", "usr/bin/sh", "usr/bin/bash"), modes)
+        assertTrue(Files.isSymbolicLink(File(root, "bin").toPath()))
+        assertArrayEquals(File(root, "usr/bin/sh").readBytes(), File(root, "usr/bin/bash").readBytes())
+    }
+    @Test fun doesNotCreateRegularFilesForDeviceOrFifoEntries() {
+        val root = extract(archive(
+            TarArchiveEntry("pipe", TarConstants.LF_FIFO),
+            TarArchiveEntry("device", TarConstants.LF_CHR),
+            TarArchiveEntry("disk", TarConstants.LF_BLK),
+            regular("ordinary"),
+        ))
+        for (name in listOf("pipe", "device", "disk")) assertFalse(File(root, name).exists())
+        assertTrue(File(root, "ordinary").isFile)
+    }
     @Test fun preservesLiteralBackslashInLinuxFilenames() {
         val root = extract(archive(regular("usr/lib/systemd/system/example\\x2dname.slice")))
         assertTrue(File(root, "usr/lib/systemd/system/example\\x2dname.slice").isFile)
