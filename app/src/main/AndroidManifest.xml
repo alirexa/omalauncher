@@ -32,7 +32,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="Omalauncher"
         android:theme="@style/Theme.Omalauncher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"

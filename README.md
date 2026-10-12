@@ -60,6 +60,8 @@ adb push ArchLinuxARM-aarch64-latest.tar.gz /sdcard/Android/data/dev.omalauncher
 Tests: `./gradlew :owl:test :app:testDebugUnitTest`. `./gradlew :owl:owlJar`
 builds `owl/build/cli/owl.jar`, the checker the widget store's CI runs.
 
+Linux downloads are authenticated with Arch Linux ARM's pinned signing key before extraction. Both files are required for an ADB-supplied image. Existing Linux environments installed before verification must be backed up, removed and reinstalled. See [security protections and limits](docs/SECURITY.md) and [installing this fork's APK](docs/INSTALL_SECURITY_BUILD.md).
+
 In debug builds you can launch guest commands with
 `adb shell am start -n dev.omalauncher/.MainActivity --es exec foot`.
 

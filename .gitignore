@@ -6,6 +6,10 @@ local.properties
 *.iml
 .cxx/
 .kotlin/
+.gradle-local/
+.local/
+work/
+outputs/
 # fetched by scripts/fetch-proot.sh
 app/src/main/jniLibs/
 # fastlane

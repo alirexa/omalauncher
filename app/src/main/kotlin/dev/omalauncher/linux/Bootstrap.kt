@@ -12,17 +12,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import java.io.BufferedInputStream
 import java.io.File
-import java.io.FilterInputStream
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.zip.GZIPInputStream
 
 private const val TAG = "bootstrap"
-private const val ROOTFS_URL = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+private const val ROOTFS_URL = "https://de3.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
 private const val TARBALL = "ArchLinuxARM-aarch64-latest.tar.gz"
 
 /** Attempts per network step before setup (or an update) reports a failure. */
@@ -44,14 +39,7 @@ private val PACKAGES =
 private const val CLIAMP_VERSION = "v2.3.0"
 private const val CLIAMP_URL = "https://github.com/bjarneo/cliamp/releases/download/$CLIAMP_VERSION/cliamp-linux-arm64"
 
-private val MIRRORS =
-    listOf(
-        "de.mirror.archlinuxarm.org",
-        "fl.us.mirror.archlinuxarm.org",
-        "eu.mirror.archlinuxarm.org",
-        "dk.mirror.archlinuxarm.org",
-        "mirror.archlinuxarm.org",
-    )
+private val MIRRORS = listOf("de3.mirror.archlinuxarm.org")
 
 /** Firmware and kernel modules are useless under proot; pacman never unpacks them. */
 private const val NO_EXTRACT = "NoExtract = usr/lib/firmware/* usr/lib/modules/*"
@@ -215,6 +203,9 @@ class Bootstrap(
         withContext(Dispatchers.IO) {
             try {
                 adoptLegacySetup()
+                check((!journal.setupComplete && "rootfs" !in journal) || "rootfs-signature-1" in journal) {
+                    "This Linux was installed without signature verification. Back up your Linux files, then remove Linux and install it again. Your launcher layout stays."
+                }
                 when {
                     journal.setupComplete -> update()
                     !choiceFile.exists() -> {
@@ -367,15 +358,49 @@ class Bootstrap(
     private fun installRootfs() {
         // Unpacking replaces the rootfs: the user's home, packages and agents. Only ever before a setup finished.
         check(!journal.setupComplete && !File(proot.filesDir, "rootfs-ready").exists()) { "refusing to replace a set-up system" }
-        val tarball = obtainTarball()
+        val obtained = obtainTarball()
+        // External files can change independently. Authenticate and unpack an internal snapshot.
+        val supplied = obtained.parentFile != context.cacheDir
+        val tarball = if (supplied) {
+            check(obtained.length() <= 3L * 1024 * 1024 * 1024) { "Linux archive is too large" }
+            File(context.cacheDir, "$TARBALL.supplied").also { obtained.copyTo(it, overwrite = true) }
+        } else obtained
+        val staging = File(proot.filesDir, "arch-staging")
         try {
-            extract(tarball)
+            report(Stage.Download, "Verifying Arch Linux ARM signature")
+            val externalSignature = File(obtained.path + ".sig")
+            val signature = if (!supplied) {
+                readHttps(URL("$ROOTFS_URL.sig"), 16 * 1024)
+            } else {
+                check(externalSignature.isFile && externalSignature.length() <= 16 * 1024) { "Provide the matching .tar.gz.sig beside the Linux archive" }
+                externalSignature.readBytes()
+            }
+            context.assets.open("security/archlinuxarm.asc").use { key ->
+                signature.inputStream().use { RootfsSignature.verify(tarball, it, key) }
+            }
+            LauncherData.deleteTree(staging)
+            staging.mkdirs()
+            report(Stage.Extract, "Unpacking verified Linux")
+            tarball.inputStream().use { input ->
+                RootfsArchive.extract(input, staging,
+                    mode = { file, mode -> Os.chmod(file.path, mode and 0x1ff or if (file.isDirectory) 0x1c0 else 0x180) },
+                    progress = { count -> report(Stage.Extract, "$count files") },
+                )
+            }
+            LauncherData.deleteTree(proot.rootfs)
+            check(staging.renameTo(proot.rootfs)) { "Cannot activate the verified Linux environment" }
+            journal.reset()
+            provisioner.forgetAll()
+            journal.mark("rootfs-signature-1")
         } catch (e: Exception) {
             // A truncated or bogus download (a captive portal's page) would fail every retry otherwise.
             if (tarball.parentFile == context.cacheDir) tarball.delete()
             throw e
+        } finally {
+            LauncherData.deleteTree(staging)
+            if (supplied) tarball.delete()
         }
-        tarball.delete() // ~830 MB we no longer need
+        obtained.delete() // ~830 MB we no longer need
     }
 
     /**
@@ -391,93 +416,44 @@ class Bootstrap(
         val partial = File(context.cacheDir, "$TARBALL.part")
         val validator = File(context.cacheDir, "$TARBALL.version")
         report(Stage.Download, "Downloading Arch Linux ARM", 0f)
-        val conn = URL(ROOTFS_URL).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
         val have = if (partial.exists() && validator.exists()) partial.length() else 0L
-        if (have > 0) {
-            conn.setRequestProperty("Range", "bytes=$have-")
-            conn.setRequestProperty("If-Range", validator.readText())
-        }
-        val resumed = conn.responseCode == HttpURLConnection.HTTP_PARTIAL
-        if (conn.responseCode !in 200..299) error("download failed: HTTP ${conn.responseCode}")
-        val start = if (resumed) have else 0L
-        val total = conn.contentLengthLong.let { if (it > 0) it + start else -1L }
-        (conn.getHeaderField("ETag") ?: conn.getHeaderField("Last-Modified"))?.let(validator::writeText) ?: validator.delete()
-        conn.inputStream.use { input ->
-            java.io.FileOutputStream(partial, resumed).use { out ->
-                val buf = ByteArray(1 shl 16)
-                var done = start
-                var lastReport = 0L
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    done += n
-                    if (done - lastReport > 4 shl 20) {
-                        lastReport = done
-                        report(
-                            Stage.Download,
-                            if (total > 0) "${done shr 20} of ${total shr 20} MB" else "${done shr 20} MB",
-                            if (total > 0) done.toFloat() / total else null,
-                        )
+        val headers = if (have > 0) mapOf("Range" to "bytes=$have-", "If-Range" to validator.readText()) else emptyMap()
+        val conn = openHttps(URL(ROOTFS_URL), headers)
+        try {
+            val resumed = conn.responseCode == HttpURLConnection.HTTP_PARTIAL
+            if (conn.responseCode !in 200..299) error("download failed: HTTP ${conn.responseCode}")
+            val start = if (resumed) have else 0L
+            val total = conn.contentLengthLong.let { if (it > 0) it + start else -1L }
+            (conn.getHeaderField("ETag") ?: conn.getHeaderField("Last-Modified"))?.let(validator::writeText) ?: validator.delete()
+            conn.inputStream.use { input ->
+                java.io.FileOutputStream(partial, resumed).use { out ->
+                    val buf = ByteArray(1 shl 16)
+                    var done = start
+                    var lastReport = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        check(done <= 3L * 1024 * 1024 * 1024) { "Linux download is too large" }
+                        if (done - lastReport > 4 shl 20) {
+                            lastReport = done
+                            report(
+                                Stage.Download,
+                                if (total > 0) "${done shr 20} of ${total shr 20} MB" else "${done shr 20} MB",
+                                if (total > 0) done.toFloat() / total else null,
+                            )
+                        }
                     }
                 }
             }
-        }
-        // Only a complete download is kept for a retry.
-        check(total <= 0 || partial.length() == total) { "the download was cut short; retry to continue it" }
-        partial.renameTo(target)
-        validator.delete()
-        return target
+            // Only a complete download is kept for a retry.
+            check(total <= 0 || partial.length() == total) { "the download was cut short; retry to continue it" }
+            check(partial.renameTo(target)) { "Cannot save Linux download" }
+            validator.delete()
+            return target
+        } finally { conn.disconnect() }
     }
-
-    private fun extract(tarball: File) {
-        report(Stage.Extract, "Starting", 0f)
-        val root = proot.rootfs
-        LauncherData.deleteTree(root)
-        root.mkdirs()
-        // Nothing we recorded about the old rootfs holds for this one.
-        journal.reset()
-        provisioner.forgetAll()
-        val total = tarball.length()
-        val counter = CountingInputStream(tarball.inputStream())
-        TarArchiveInputStream(GZIPInputStream(BufferedInputStream(counter, 1 shl 16), 1 shl 16)).use { tar ->
-            var count = 0
-            while (true) {
-                val entry = tar.nextEntry ?: break
-                val name = entry.name.removePrefix("./").trimEnd('/')
-                if (name.isEmpty() || skipEntry(name)) continue
-                val file = File(root, name)
-                file.parentFile?.mkdirs()
-                when {
-                    entry.isDirectory -> file.mkdirs()
-                    entry.isSymbolicLink -> {
-                        file.delete()
-                        Os.symlink(entry.linkName, file.path)
-                    }
-                    // Hard links aren't allowed in app storage; copy the target instead.
-                    entry.isLink -> {
-                        val target = File(root, entry.linkName.removePrefix("./"))
-                        if (target.exists()) target.copyTo(file, overwrite = true)
-                    }
-                    entry.isFile -> file.outputStream().use { tar.copyTo(it) }
-                    else -> continue // device nodes, fifos
-                }
-                if (!entry.isSymbolicLink) runCatching { Os.chmod(file.path, entry.mode and 0x1ff or 0x180) }
-                if (++count % 500 == 0) {
-                    report(Stage.Extract, "$count files", counter.count.toFloat() / total)
-                }
-            }
-        }
-    }
-
-    private fun skipEntry(name: String) =
-        name == "boot" ||
-            name.startsWith("boot/") ||
-            name.startsWith("usr/lib/firmware/") ||
-            name.startsWith("usr/lib/modules/") ||
-            name.startsWith("dev/")
 
     private fun configure() {
         val root = proot.rootfs
@@ -488,15 +464,15 @@ class Bootstrap(
         File(root, "etc/hosts").writeText("127.0.0.1 localhost\n::1 localhost\n")
         File(root, "etc/locale.conf").writeText("LANG=C.UTF-8\n")
         // The geo-balanced default mirror often lags behind; pacman falls through this list on 404s.
-        File(root, "etc/pacman.d/mirrorlist").writeText(MIRRORS.joinToString("") { "Server = http://$it/\$arch/\$repo\n" })
+        File(root, "etc/pacman.d/mirrorlist").writeText(MIRRORS.joinToString("") { "Server = https://$it/\$arch/\$repo\n" })
         // pacman drops privileges and uses Landlock for downloads; neither works under proot.
         // Its low-speed timeout aborts big packages on slow phone connections, every retry.
         val conf = File(root, "etc/pacman.conf")
         conf.writeText(
             conf
                 .readText()
-                .replace(Regex("(?m)^(DownloadUser|CheckSpace|DisableSandbox|DisableDownloadTimeout|NoExtract)\\b.*\n"), "")
-                .replaceFirst("[options]", "[options]\nDisableSandbox\nDisableDownloadTimeout\n$NO_EXTRACT"),
+                .replace(Regex("(?m)^(DownloadUser|CheckSpace|DisableSandbox|DisableDownloadTimeout|NoExtract|SigLevel)\\b.*\n"), "")
+                .replaceFirst("[options]", "[options]\nSigLevel = Required DatabaseOptional\nDisableSandbox\nDisableDownloadTimeout\n$NO_EXTRACT"),
         )
     }
 
@@ -519,19 +495,4 @@ class Bootstrap(
         val code = proot.run(script) { line -> if (log.add(line)) report(stage, step) }
         check(code == 0) { "`${script.take(60)}` failed (exit $code)" }
     }
-}
-
-private class CountingInputStream(
-    input: InputStream,
-) : FilterInputStream(input) {
-    var count = 0L
-        private set
-
-    override fun read(): Int = super.read().also { if (it >= 0) count++ }
-
-    override fun read(
-        b: ByteArray,
-        off: Int,
-        len: Int,
-    ): Int = super.read(b, off, len).also { if (it > 0) count += it }
 }

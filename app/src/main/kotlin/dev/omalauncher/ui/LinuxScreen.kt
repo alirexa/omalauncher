@@ -59,7 +59,13 @@ fun LinuxScreen(
             when (val s = state) {
                 LinuxState.Checking -> {}
                 LinuxState.NotInstalled -> InstallOffer(runtime)
-                is LinuxState.Installing, is LinuxState.Failed -> LinuxProgress(s, runtime.bootstrap.chosenAgents, runtime::retryLinux)
+                is LinuxState.Installing, is LinuxState.Failed -> {
+                    LinuxProgress(s, runtime.bootstrap.chosenAgents, runtime::retryLinux)
+                    if (s is LinuxState.Failed) {
+                        Spacer(Modifier.height(16.dp))
+                        RemoveLinux(runtime)
+                    }
+                }
                 LinuxState.Installed -> Installed(runtime)
                 LinuxState.Removing -> BasicText("removing linux…", style = Mono.copy(color = Palette.accent))
             }
@@ -110,7 +116,6 @@ private fun InstallOffer(runtime: Runtime) {
 private fun Installed(runtime: Runtime) {
     var size by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(Unit) { size = withContext(Dispatchers.IO) { diskUsage(runtime.proot.rootfs) } }
-    var confirm by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clip(LauncherStyle.shape(12.dp)).background(Palette.surface).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -128,6 +133,12 @@ private fun Installed(runtime: Runtime) {
         GpuRow(runtime)
     }
     Spacer(Modifier.height(16.dp))
+    RemoveLinux(runtime)
+}
+
+@Composable
+private fun RemoveLinux(runtime: Runtime) {
+    var confirm by remember { mutableStateOf(false) }
     if (!confirm) {
         BracketAction("remove linux", Palette.red) { confirm = true }
     } else {

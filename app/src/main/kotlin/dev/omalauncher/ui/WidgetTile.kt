@@ -41,13 +41,21 @@ internal fun WidgetTile(
     /** Where Linux stands, if the widget needs it and it isn't running: a placeholder keeps its cells. */
     waitsForLinux: LinuxState? = null,
     onInstallLinux: () -> Unit = {},
+    needsReview: Boolean = false,
+    onPermissions: () -> Unit = {},
 ) {
     Box(
         modifier
             .tile(focused)
             .pointerInput(spec) { detectTapGestures(onTap = { onTap() }) },
     ) {
-        if (waitsForLinux != null) {
+        if (needsReview) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BasicText(spec.name, style = Mono)
+                BasicText("Blocked until you review permissions", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+                TileButton("review", Palette.accent, onPermissions)
+            }
+        } else if (waitsForLinux != null) {
             // While an installed Linux starts up the tile stays empty; it only offers an install when there's none.
             if (waitsForLinux != LinuxState.Checking && waitsForLinux != LinuxState.Installed) {
                 LinuxPlaceholder(spec.name, installing = waitsForLinux is LinuxState.Installing, onInstallLinux)

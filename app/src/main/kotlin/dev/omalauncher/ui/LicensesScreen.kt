@@ -129,6 +129,7 @@ private val COMPONENTS =
         Component("AndroidSVG", "draws SVG icons", APACHE, "Copyright 2013 Paul LeBeau, Cave Rock Software Ltd.", "https://bigbadaboom.github.io/androidsvg/"),
         Component("ZXing", "draws the QR codes widgets are shared with", APACHE, "Copyright 2007-2025 ZXing authors", "https://github.com/zxing/zxing"),
         Component("JSON-java", "reads and writes JSON", "public-domain", "Public Domain.", "https://github.com/stleary/JSON-java"),
+        Component("Bouncy Castle", "verifies Linux download signatures", "bouncycastle", "Copyright 2000-2026 The Legion of the Bouncy Castle Inc.", "https://www.bouncycastle.org"),
     )
 
 /** Third-party notices, opened from settings. Tapping an entry shows its full license text. */

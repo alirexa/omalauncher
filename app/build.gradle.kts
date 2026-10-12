@@ -12,6 +12,7 @@ val uploadKey = rootProject.file("keystore.properties").takeIf { it.exists() }
 android {
     namespace = "dev.omalauncher"
     compileSdk = 37
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "dev.omalauncher"
@@ -29,6 +30,7 @@ android {
     }
 
     packaging {
+        resources.merges += setOf("META-INF/LICENSE.md", "META-INF/NOTICE.md")
         jniLibs {
             // Extract .so files to nativeLibraryDir: proot is exec'd from there.
             useLegacyPackaging = true
@@ -70,6 +72,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
     implementation(libs.commons.compress)
+    implementation(libs.bcpg)
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
     implementation(project(":owl"))

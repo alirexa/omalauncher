@@ -24,8 +24,10 @@ import android.widget.Toast
 import dev.omalauncher.MainActivity
 import dev.omalauncher.R
 import dev.omalauncher.Runtime
+import dev.omalauncher.LauncherData
 import dev.omalauncher.linux.GuestShell
 import dev.omalauncher.linux.Proot
+import dev.omalauncher.linux.openHttps
 import dev.omalauncher.linux.ShellPool
 import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.widgets.lang.Null
@@ -55,15 +57,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.net.HttpURLConnection
 import java.net.URL
 
 private const val MAX_HTTP_BYTES = 1 shl 20
 private const val NOTIFY_CHANNEL = "widgets"
 
 /**
- * What widgets can reach: guest commands (in shared shells, never with
- * Android permissions), HTTP, a few Android facts and actions.
+ * Host services, wrapped in per-widget permissions by WidgetEngine. Guest
+ * commands share a Linux environment and are not isolated from trusted peers.
  */
 class WidgetServices(
     private val context: Context,
@@ -154,7 +155,11 @@ class WidgetServices(
 
     override fun guestFile(path: String): File {
         val p = if (path.startsWith("~/")) Proot.GUEST_HOME + "/" + path.removePrefix("~/") else path
-        return proot.hostFile(p)
+        if (p.split('/').any { it == ".." }) throw WidgetError("file path escapes Linux")
+        val file = proot.hostFile(p).canonicalFile
+        val allowed = listOf(proot.rootfs, proot.tmpDir, LauncherData.widgetsDir(context), LauncherData.omarchyDir(context), LauncherData.userThemesDir(context), LauncherData.userBackgroundsDir(context))
+        if (allowed.none { file.toPath().startsWith(it.canonicalFile.toPath()) }) throw WidgetError("file path escapes Linux")
+        return file
     }
 
     /** The phone itself, which the guest can't identify: it has no DMI tables, and /system isn't mounted. */
@@ -279,7 +284,9 @@ class WidgetServices(
             // Named after the command (btop, dua, ...) unless the widget passes a name.
             "terminal" -> runtime.terminal("$arg; exec bash", args.getOrNull(1)?.toString() ?: arg.substringBefore(' '))
             "app" -> runtime.launch(arg)
-            "url" -> context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(arg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "url" -> android.net.Uri.parse(arg).takeIf { it.scheme in setOf("https", "http") }?.let {
+                context.startActivity(Intent(Intent.ACTION_VIEW, it).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
             "launcher" -> launcherAction?.invoke(arg)
             "media" -> media.control(arg)
             "volume" -> volume.control(args[0])
@@ -309,14 +316,10 @@ class WidgetServices(
         timeoutSeconds: Int,
     ): ShellResult =
         withContext(Dispatchers.IO) {
-            if (!url.startsWith("https://") && !url.startsWith("http://")) return@withContext ShellResult("", "not an http(s) URL: $url", -1)
+            if (!url.startsWith("https://")) return@withContext ShellResult("", "widgets require an HTTPS URL", -1)
             try {
-                val connection = URL(url).openConnection() as HttpURLConnection
+                val connection = openHttps(URL(url), headers + ("User-Agent" to "omalauncher-widgets"), timeoutSeconds * 1000, timeoutSeconds * 1000)
                 try {
-                    connection.connectTimeout = timeoutSeconds * 1000
-                    connection.readTimeout = timeoutSeconds * 1000
-                    connection.setRequestProperty("User-Agent", "omalauncher-widgets")
-                    headers.forEach { (k, v) -> connection.setRequestProperty(k, v) }
                     val code = connection.responseCode
                     val stream = if (code >= 400) connection.errorStream else connection.inputStream
                     // Widgets show a few values; a runaway response mustn't fill memory.

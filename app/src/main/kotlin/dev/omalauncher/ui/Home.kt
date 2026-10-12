@@ -60,6 +60,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val engine = runtime.widgets
+    var permissionsFor by remember { mutableStateOf<dev.omalauncher.widgets.WidgetSpec?>(null) }
+    permissionsFor?.let { spec -> WidgetPermissionsDialog(engine, spec) { permissionsFor = null } }
     val linuxState by runtime.bootstrap.state.collectAsState()
     val arrange = remember { Arrange() }
     // One empty page always waits after the last one, to drop tiles on or pin apps to. Pages only exist
@@ -261,6 +263,10 @@ fun HomeScreen(
                             state.sharing = item.spec
                         }
                     }
+                    if (item is WidgetItem) EditAction("permissions") {
+                        state.editing = null
+                        permissionsFor = item.spec
+                    }
                     EditAction("remove", Palette.red) { remove(item) }
                 }
             },
@@ -285,6 +291,8 @@ fun HomeScreen(
                                     tile
                                 },
                             onTap = { engine.tap(item.spec) },
+                            needsReview = engine.needsReview(item.spec),
+                            onPermissions = { permissionsFor = item.spec },
                             needs = engine.missing[item.spec.file.name].orEmpty(),
                             install = engine.installs[item.spec.file.name],
                             onInstall = { engine.installDependencies(item.spec) },

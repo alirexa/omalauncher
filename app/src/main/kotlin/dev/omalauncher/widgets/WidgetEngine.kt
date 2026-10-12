@@ -55,15 +55,16 @@ class WidgetSpec(
     val minSize: Pair<Int, Int> = 1 to 1,
     /** The file's modification time when it was compiled; unchanged files aren't recompiled. */
     val stamp: Long = 0,
+    val digest: String = "",
 ) {
-    fun onPage(page: Int) = WidgetSpec(file, name, page, order, program, error, size, minSize, stamp)
+    fun onPage(page: Int) = WidgetSpec(file, name, page, order, program, error, size, minSize, stamp, digest)
 }
 
 /**
  * Loads widgets (`*.owl`) from [dir], ~/.config/omalauncher/widgets in the guest,
- * reloads files as they change, and runs each widget's sources while its
- * page is on screen. Commands run inside the guest, never with Android
- * permissions.
+ * reloads files as they change, and runs approved sources while their
+ * page is on screen. Guest programs share the application's Linux UID;
+ * approval of arbitrary commands is a trust decision, not sandboxing.
  */
 class WidgetEngine(
     private val context: Context,
@@ -94,6 +95,28 @@ class WidgetEngine(
     val shortcuts = Shortcuts(context, layout)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val services = WidgetServices(context, proot, runtime, scope)
+    private val permissions = WidgetPermissions(File(context.filesDir, "widget-permissions.json"))
+    private var permissionRevision by mutableIntStateOf(0)
+    private val bundledHashes = context.assets.list("widgets").orEmpty().filter { it.endsWith(".owl") }.associateWith { name ->
+        context.assets.open("widgets/$name").use { Review.sha256(it.readBytes()) }
+    }
+
+    fun grants(spec: WidgetSpec): WidgetGrants? {
+        permissionRevision // observe revocation in Compose
+        if (permissions.known(spec.file.name, spec.digest)) return permissions.get(spec.file.name, spec.digest)
+        return if (bundledHashes[spec.file.name] == spec.digest) WidgetGrants(network = true, files = true, shell = true) else null
+    }
+
+    fun needsReview(spec: WidgetSpec) = spec.program != null && (grants(spec) == null || (spec.program.needsLinux && grants(spec)?.shell != true))
+
+    fun setGrants(spec: WidgetSpec, grants: WidgetGrants?) {
+        // Do not approve a file which changed while its review was open.
+        if (hashes[spec.file.name] != spec.digest) return
+        instances.remove(spec.file.name)?.stop()
+        permissions.set(spec.file.name, spec.digest, grants)
+        permissionRevision++
+        changes.trySend(Unit)
+    }
 
     /** Opens launcher screens ("style" or "themes", "agents", "drawer"); set by the UI. */
     var launcherAction by services::launcherAction
@@ -280,7 +303,8 @@ class WidgetEngine(
     /** A widget file that's gone takes its place, page and saved values along, so a new file of that name starts fresh. */
     private fun forget(fileName: String) {
         layout.remove(fileName)
-        File(stateDir, "$fileName.json").delete()
+        stateDir.listFiles { f -> f.name == "$fileName.json" || f.name.startsWith("$fileName.") }?.forEach { it.delete() }
+        permissions.set(fileName, "", null)
         hashes.remove(fileName)
         File(checkDir, "$fileName.txt").delete()
         File(previewDir, "$fileName.png").delete()
@@ -392,7 +416,7 @@ class WidgetEngine(
         for (spec in parsed) {
             val program = spec.program ?: continue
             // Stopped below with the other leftovers.
-            if (program.needsLinux && !linux) continue
+            if (needsReview(spec) || (program.needsLinux && !linux)) continue
             val prev = previous.remove(spec.file.name)
             if (prev?.program === program) {
                 instances[spec.file.name] = prev
@@ -400,16 +424,18 @@ class WidgetEngine(
             }
             prev?.stop()
             val name = spec.file.name
+            val granted = grants(spec)!!
+            val stateKey = "${spec.digest}.${granted.network}-${granted.files}-${granted.shell}-${granted.notifications}"
             val inst =
                 WidgetInstance(
                     program,
-                    services,
+                    PermissionServices(services, granted),
                     { message -> writeError(spec.file, message, append = true) },
-                    File(stateDir, "$name.json"),
+                    File(stateDir, "$name.$stateKey.json"),
                     onScreen = { open -> if (open) openScreen = name else if (openScreen == name) openScreen = null },
                     linux = { linux },
                 )
-            prev?.let(inst::adopt)
+            if (old[name]?.digest == spec.digest) prev?.let(inst::adopt)
             instances[spec.file.name] = inst
             inst.start(scope) { isLive(spec) }
         }
@@ -572,7 +598,7 @@ class WidgetEngine(
             val p = Compiler.compile(text)
             writeError(file, null)
             writeCheck(file, hash, "ok")
-            WidgetSpec(file, p.name, layout.page(file.name) ?: p.page, p.order, p, null, p.size, p.minSize, stamp)
+            WidgetSpec(file, p.name, layout.page(file.name) ?: p.page, p.order, p, null, p.size, p.minSize, stamp, hash)
         } catch (e: CompileError) {
             broken(file, previous, stamp, Source(text).format(e), hash)
         } catch (e: RuntimeException) {
@@ -656,7 +682,7 @@ class WidgetEngine(
      */
     private suspend fun checkDependencies(specs: List<WidgetSpec>) {
         if (!linux) return
-        val programs = specs.mapNotNull { it.program }
+        val programs = specs.filter { grants(it)?.shell == true }.mapNotNull { it.program }
         val packages = programs.flatMap { it.requires["pacman"].orEmpty() }.distinct()
         val bins = programs.flatMap { it.programs }.distinct()
         if (packages.isEmpty() && bins.isEmpty()) {
@@ -673,6 +699,7 @@ class WidgetEngine(
         val missingPkgs = lines.filter { it.startsWith("pkg ") }.map { it.removePrefix("pkg ") }.toSet()
         val missingBins = lines.filter { it.startsWith("bin ") }.map { it.removePrefix("bin ") }.toSet()
         for (spec in specs) {
+            if (grants(spec)?.shell != true) continue
             val p = spec.program ?: continue
             val need = p.requires["pacman"].orEmpty().filter { it in missingPkgs }
             if (need.isEmpty()) missing.remove(spec.file.name) else missing[spec.file.name] = need
@@ -692,6 +719,7 @@ class WidgetEngine(
 
     /** Installs a widget's missing packages the way the bootstrap does: a full sync, so no partial upgrades. */
     fun installDependencies(spec: WidgetSpec) {
+        if (grants(spec)?.shell != true) return
         val name = spec.file.name
         val packages = missing[name].orEmpty()
         if (packages.isEmpty() || installs[name] == Install.Running) return

@@ -412,7 +412,10 @@ class WidgetInstance(
     private fun loadImage(src: String) {
         val scope = scope ?: return
         scope.launch {
-            val file = if (src.startsWith("asset:")) null else services.guestFile(src)
+            val file = if (src.startsWith("asset:")) null else runCatching { services.guestFile(src) }.getOrElse {
+                report("image '$src': ${it.message}")
+                return@launch
+            }
             val decoded =
                 withContext(Dispatchers.IO) {
                     val stamp = file?.lastModified() ?: 0L
