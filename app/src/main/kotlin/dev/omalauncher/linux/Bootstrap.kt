@@ -203,9 +203,7 @@ class Bootstrap(
         withContext(Dispatchers.IO) {
             try {
                 adoptLegacySetup()
-                check((!journal.setupComplete && "rootfs" !in journal) || "rootfs-signature-1" in journal) {
-                    "This Linux was installed without signature verification. Back up your Linux files, then remove Linux and install it again. Your launcher layout stays."
-                }
+                requireVerifiedRootfs(journal)
                 when {
                     journal.setupComplete -> update()
                     !choiceFile.exists() -> {

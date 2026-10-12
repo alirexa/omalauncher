@@ -18,21 +18,22 @@ import java.io.File
 private const val MAX_FILE_BYTES = 1 shl 20
 
 /**
- * [file]'s text now and after every change, for `source x = file(...)`.
+ * A file's text now and after every change, for `source x = file(...)`.
+ * [resolve] re-checks the path against widget permissions before each read.
  * Changes arrive through inotify on its folder, so a file replaced by a rename
  * (how editors and `jq ... > tmp && mv` save) is seen too. A stat every few
  * seconds covers a folder that doesn't exist yet or was replaced. A missing
  * file reads as "".
  */
-fun watchFile(file: File): Flow<String> =
+fun watchFile(resolve: () -> File): Flow<String> =
     callbackFlow {
         val changed = Channel<Unit>(Channel.CONFLATED)
         var observer: FileObserver? = null
         var watched: File? = null
 
-        fun watch() {
+        fun watch(file: File) {
             val dir = file.parentFile ?: return
-            if (observer != null && watched == dir && dir.isDirectory) return
+            if (observer != null && watched == file && dir.isDirectory) return
             observer?.stopWatching()
             observer = null
             if (!dir.isDirectory) return
@@ -46,7 +47,7 @@ fun watchFile(file: File): Flow<String> =
                         if (path == file.name) changed.trySend(Unit)
                     }
                 }.also { it.startWatching() }
-            watched = dir
+            watched = file
         }
 
         val loop =
@@ -54,7 +55,9 @@ fun watchFile(file: File): Flow<String> =
                 var stamp: Pair<Long, Long>? = null
                 var force = true
                 while (isActive) {
-                    watch()
+                    // Re-resolve before every read: a watched file can be replaced by a symlink.
+                    val file = resolve()
+                    watch(file)
                     val now = file.lastModified() to file.length()
                     if (force || now != stamp) {
                         stamp = now

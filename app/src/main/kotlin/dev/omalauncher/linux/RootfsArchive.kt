@@ -14,7 +14,7 @@ internal object RootfsArchive {
     private const val MAX_TOTAL_BYTES = 8L * 1024 * 1024 * 1024
     private const val MAX_FILE_BYTES = 1024L * 1024 * 1024
 
-    fun extract(input: InputStream, directory: File, mode: (File, Int) -> Unit = { _, _ -> }, progress: (Int) -> Unit = {}) {
+    fun extract(input: InputStream, directory: File, mode: (File, Int) -> Unit = { _, _ -> }, progress: (Int) -> Unit = {}, maxTotalBytes: Long = MAX_TOTAL_BYTES) {
         check(!Files.isSymbolicLink(directory.toPath())) { "Linux staging directory cannot be a link" }
         val root = directory.canonicalFile.toPath()
         check(Files.isDirectory(root, NOFOLLOW_LINKS) && directory.list().orEmpty().isEmpty()) { "Linux staging directory must be empty" }
@@ -64,7 +64,7 @@ internal object RootfsArchive {
                         linkModes[out] = entry.mode
                     }
                     entry.isFile -> {
-                        check(entry.size in 0..MAX_FILE_BYTES && total + entry.size <= MAX_TOTAL_BYTES) { "Linux archive exceeds size limits" }
+                        check(entry.size in 0..MAX_FILE_BYTES && entry.size <= maxTotalBytes - total) { "Linux archive exceeds size limits" }
                         total += entry.size
                         Files.newOutputStream(out, java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE).use { tar.copyTo(it) }
                     }
@@ -80,6 +80,9 @@ internal object RootfsArchive {
             val ready = hard.filterValues { Files.isRegularFile(it.first, NOFOLLOW_LINKS) }
             check(ready.isNotEmpty()) { "Archive hard link has no regular file target" }
             for ((out, link) in ready) {
+                val size = Files.size(link.first)
+                check(size <= maxTotalBytes - total) { "Linux archive hard links exceed size limits" }
+                total += size
                 Files.copy(link.first, out)
                 mode(out.toFile(), linkModes.getValue(out))
                 hard.remove(out)

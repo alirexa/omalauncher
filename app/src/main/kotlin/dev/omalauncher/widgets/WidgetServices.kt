@@ -151,15 +151,13 @@ class WidgetServices(
         fontSize: Double?,
     ) = runtime.terminals.create(command, fontSize)
 
-    override fun fileUpdates(path: String) = watchFile(guestFile(path))
+    override fun fileUpdates(path: String) = watchFile { guestFile(path) }
 
     override fun guestFile(path: String): File {
-        val p = if (path.startsWith("~/")) Proot.GUEST_HOME + "/" + path.removePrefix("~/") else path
-        if (p.split('/').any { it == ".." }) throw WidgetError("file path escapes Linux")
-        val file = proot.hostFile(p).canonicalFile
         val allowed = listOf(proot.rootfs, proot.tmpDir, LauncherData.widgetsDir(context), LauncherData.omarchyDir(context), LauncherData.userThemesDir(context), LauncherData.userBackgroundsDir(context))
-        if (allowed.none { file.toPath().startsWith(it.canonicalFile.toPath()) }) throw WidgetError("file path escapes Linux")
-        return file
+        // Rendered previews and runtime errors can contain another widget's notification data.
+        val privateRoots = listOf(".preview", ".errors", ".inbox", ".check").map { File(LauncherData.widgetsDir(context), it) }
+        return resolveWidgetFile(path, proot::hostFile, allowed, privateRoots)
     }
 
     /** The phone itself, which the guest can't identify: it has no DMI tables, and /system isn't mounted. */

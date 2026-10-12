@@ -3,7 +3,7 @@
 This fork is an experimental build of Omalauncher with the protections described
 in [SECURITY.md](SECURITY.md). It requires an arm64 Android phone with Android 10
 or later. It uses the original application ID (`dev.omalauncher`) but its own
-signing key, so Android will not accept it as an update to the Play Store build.
+signing key, so Android will not accept it as an update to the Play Store build. A reviewed APK signed with the same fork key can replace the earlier security preview without uninstalling it.
 
 1. Export any Linux documents or other app data you want to retain using the
    existing app before uninstalling it. Uninstalling deletes the private Linux

@@ -10,6 +10,13 @@ import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator
 import org.bouncycastle.openpgp.operator.bc.BcPGPContentVerifierBuilderProvider
 import java.io.File
 import java.io.InputStream
+import dev.omalauncher.upgrade.StepJournal
+
+internal fun requireVerifiedRootfs(journal: StepJournal) {
+    check((!journal.setupComplete && "rootfs" !in journal) || "rootfs-signature-1" in journal) {
+        "This Linux was installed without signature verification. Back up your Linux files, then remove Linux and install it again. Your launcher layout stays."
+    }
+}
 
 /** Authenticate before parsing the archive. Never run gpg from the unverified guest. */
 internal object RootfsSignature {

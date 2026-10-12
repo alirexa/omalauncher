@@ -18,7 +18,8 @@ internal fun openHttps(url: URL, headers: Map<String, String> = emptyMap(), conn
             if (c.responseCode !in setOf(301, 302, 303, 307, 308)) return c
             val destination = URL(next, c.getHeaderField("Location") ?: error("Download redirect has no destination"))
             if (destination.host != next.host || destination.port != next.port) {
-                requestHeaders = requestHeaders.filterKeys { it.lowercase() !in setOf("authorization", "proxy-authorization", "cookie") }
+                // Custom authentication headers (e.g. X-API-Key) are secrets too.
+                requestHeaders = requestHeaders.filterKeys { it.lowercase() in setOf("accept", "accept-language", "user-agent", "range", "if-range") }
             }
             next = destination
         } catch (e: Exception) {

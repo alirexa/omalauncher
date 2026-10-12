@@ -5,7 +5,18 @@ import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.ui.EmbeddedTerminal
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Value
+import dev.omalauncher.widgets.lang.Compiler
 import dev.omalauncher.widgets.runtime.Services
+import dev.omalauncher.widgets.runtime.WidgetInstance
+import dev.omalauncher.widgets.runtime.watchFile
+import dev.omalauncher.widgets.lang.WidgetError
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -27,6 +38,34 @@ class WidgetPermissionsTest {
         permissions.set("widget.owl", "one", null)
         assertTrue(permissions.known("widget.owl", "one")) // explicitly blocked, including bundled widgets
         assertNull(WidgetPermissions(file).get("widget.owl", "one"))
+    }
+    @Test fun failedSaveDoesNotGrantAccessInMemoryOrOnRestart() {
+        val file = File(temp.root, "permissions.json")
+        val permissions = WidgetPermissions(file) { _, _ -> throw java.io.IOException("disk full") }
+        assertThrows(java.io.IOException::class.java) { permissions.set("widget.owl", "one", WidgetGrants(shell = true)) }
+        assertNull(permissions.get("widget.owl", "one"))
+        assertNull(WidgetPermissions(file).get("widget.owl", "one"))
+    }
+    @Test fun failedRevocationKeepsThePreviouslyCommittedDecision() {
+        val file = File(temp.root, "permissions.json")
+        WidgetPermissions(file).set("widget.owl", "one", WidgetGrants(network = true))
+        val permissions = WidgetPermissions(file) { _, _ -> throw java.io.IOException("disk full") }
+        assertThrows(java.io.IOException::class.java) { permissions.set("widget.owl", "one", null) }
+        assertEquals(WidgetGrants(network = true), permissions.get("widget.owl", "one"))
+        assertEquals(WidgetGrants(network = true), WidgetPermissions(file).get("widget.owl", "one"))
+    }
+    @Test fun fileOnlyWidgetWorksWithoutCommandApproval() {
+        val program = Compiler.compile("""widget "Notes" { meta { owl: 4 }; source note = file("~/notes.txt"); Text { text: note } }""")
+        assertTrue(program.needsLinux)
+        assertFalse(program.terminal)
+        assertFalse(requiresWidgetReview(program, WidgetGrants(files = true)))
+        assertTrue(requiresWidgetReview(program, null))
+    }
+    @Test fun embeddedTerminalStillRequiresCommandApproval() {
+        val program = Compiler.compile("""widget "Shell" { meta { owl: 2 }; Terminal { } }""")
+        assertTrue(program.terminal)
+        assertTrue(requiresWidgetReview(program, WidgetGrants(files = true)))
+        assertFalse(requiresWidgetReview(program, WidgetGrants(shell = true)))
     }
 
     private class Spy : Services {
@@ -70,5 +109,20 @@ class WidgetPermissionsTest {
         services.android("notifications")
         services.cmd("command", 1)
         assertEquals(1, spy.calls)
+    }
+    @Test fun rejectedFileSourceReportsAnErrorWithoutCrashingTheWidgetScope() = runBlocking {
+        val reported = CompletableDeferred<String>()
+        val unhandled = CompletableDeferred<Throwable>()
+        val services = object : Services by Spy() {
+            override fun fileUpdates(path: String) = watchFile { throw WidgetError("blocked path") }
+        }
+        val program = Compiler.compile("""widget "Private" { meta { owl: 4 }; source n = file("~/bad"); Text { text: n } }""")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> unhandled.complete(e) })
+        val instance = WidgetInstance(program, services, { reported.complete(it) })
+        try {
+            instance.start(scope) { true }
+            assertTrue(withTimeout(2000) { reported.await() }.contains("blocked path"))
+            assertFalse(unhandled.isCompleted)
+        } finally { scope.cancel(); instance.stop() }
     }
 }

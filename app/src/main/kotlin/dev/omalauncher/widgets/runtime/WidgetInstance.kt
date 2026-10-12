@@ -46,6 +46,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
@@ -514,7 +515,13 @@ class WidgetInstance(
                                 untilPaused(active, g) {
                                     // A path built from state is watched anew when it changes.
                                     snapshotFlow { eval(g.arg!!, root, g.name) }.collectLatest { path ->
-                                        if (path != Null) services.fileUpdates(path.toString()).collect { text -> set(slot, g, text) }
+                                        if (path != Null) {
+                                            services.fileUpdates(path.toString()).catch { error ->
+                                                if (error is kotlinx.coroutines.CancellationException) throw error
+                                                report("${g.name}: ${error.message}")
+                                                write(slot, Null)
+                                            }.collect { text -> set(slot, g, text) }
+                                        }
                                     }
                                 }
                             else -> {

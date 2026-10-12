@@ -46,10 +46,11 @@ class HttpsDownloadsTest {
                 override fun usingProxy() = false
             }
         }
-        openHttps(URL(null, "https://trusted.example/image", handler), mapOf("Authorization" to "secret", "Cookie" to "session", "Accept" to "application/octet-stream")).disconnect()
+        openHttps(URL(null, "https://trusted.example/image", handler), mapOf("Authorization" to "secret", "Cookie" to "session", "X-API-Key" to "api-secret", "Accept" to "application/octet-stream")).disconnect()
         assertEquals(listOf("secret"), requests[0]["Authorization"])
         assertNull(requests[1]["Authorization"])
         assertNull(requests[1]["Cookie"])
+        assertNull(requests[1]["X-API-Key"])
         assertEquals(listOf("application/octet-stream"), requests[1]["Accept"])
     }
 }

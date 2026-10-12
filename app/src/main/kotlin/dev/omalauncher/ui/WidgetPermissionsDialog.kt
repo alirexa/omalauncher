@@ -24,6 +24,7 @@ import dev.omalauncher.widgets.WidgetSpec
 @Composable
 internal fun WidgetPermissionsDialog(engine: WidgetEngine, spec: WidgetSpec, dismiss: () -> Unit) {
     var grants by remember(spec) { mutableStateOf(engine.grants(spec) ?: WidgetGrants()) }
+    var error by remember(spec) { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = dismiss) {
         OverlayPanel("${spec.name} permissions", dismiss) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -39,9 +40,10 @@ internal fun WidgetPermissionsDialog(engine: WidgetEngine, spec: WidgetSpec, dis
                 BasicText("Requested operations:", style = Mono)
                 for (command in spec.program?.commands.orEmpty()) BasicText(command, style = Mono.copy(fontSize = TextSize.Small))
                 BasicText("Packages: " + spec.program?.requires.orEmpty().values.flatten().joinToString().ifEmpty { "none" }, style = Mono.copy(fontSize = TextSize.Small))
+                error?.let { BasicText(it, style = Mono.copy(color = Palette.red, fontSize = TextSize.Small)) }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BracketAction("save", Palette.accent) { engine.setGrants(spec, grants); dismiss() }
-                    BracketAction("block widget", Palette.red) { engine.setGrants(spec, null); dismiss() }
+                    BracketAction("save", Palette.accent) { error = engine.setGrants(spec, grants); if (error == null) dismiss() }
+                    BracketAction("block widget", Palette.red) { error = engine.setGrants(spec, null); if (error == null) dismiss() }
                 }
             }
         }

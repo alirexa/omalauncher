@@ -1,4 +1,5 @@
 package dev.omalauncher.widgets
+import android.util.Log
 
 import android.content.Context
 import android.os.FileObserver
@@ -107,15 +108,20 @@ class WidgetEngine(
         return if (bundledHashes[spec.file.name] == spec.digest) WidgetGrants(network = true, files = true, shell = true) else null
     }
 
-    fun needsReview(spec: WidgetSpec) = spec.program != null && (grants(spec) == null || (spec.program.needsLinux && grants(spec)?.shell != true))
+    fun needsReview(spec: WidgetSpec) = requiresWidgetReview(spec.program, grants(spec))
 
-    fun setGrants(spec: WidgetSpec, grants: WidgetGrants?) {
+    fun setGrants(spec: WidgetSpec, grants: WidgetGrants?): String? {
         // Do not approve a file which changed while its review was open.
-        if (hashes[spec.file.name] != spec.digest) return
+        if (hashes[spec.file.name] != spec.digest) return "This widget changed. Close and reopen its permissions to review the new version."
+        try {
+            permissions.set(spec.file.name, spec.digest, grants)
+        } catch (e: Exception) {
+            return "Permissions were not changed: ${e.message ?: "could not save"}"
+        }
         instances.remove(spec.file.name)?.stop()
-        permissions.set(spec.file.name, spec.digest, grants)
         permissionRevision++
         changes.trySend(Unit)
+        return null
     }
 
     /** Opens launcher screens ("style" or "themes", "agents", "drawer"); set by the UI. */
@@ -304,7 +310,8 @@ class WidgetEngine(
     private fun forget(fileName: String) {
         layout.remove(fileName)
         stateDir.listFiles { f -> f.name == "$fileName.json" || f.name.startsWith("$fileName.") }?.forEach { it.delete() }
-        permissions.set(fileName, "", null)
+        runCatching { permissions.set(fileName, "", null) }
+            .onFailure { Log.w("widgets", "could not clear removed widget permissions", it) }
         hashes.remove(fileName)
         File(checkDir, "$fileName.txt").delete()
         File(previewDir, "$fileName.png").delete()

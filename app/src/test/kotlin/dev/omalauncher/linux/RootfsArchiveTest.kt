@@ -39,6 +39,13 @@ class RootfsArchiveTest {
         val root = extract(archive(regular("usr/lib/systemd/system/example\\x2dname.slice")))
         assertTrue(File(root, "usr/lib/systemd/system/example\\x2dname.slice").isFile)
     }
+    @Test fun countsHardLinkCopiesAgainstTheExpandedSizeLimit() {
+        val root = temp.newFolder()
+        val bytes = archive(regular("source"), hard("copy1", "source"), hard("copy2", "source"))
+        assertThrows(Exception::class.java) { RootfsArchive.extract(bytes.inputStream(), root, maxTotalBytes = 8) }
+        assertTrue(File(root, "copy1").exists())
+        assertFalse(File(root, "copy2").exists())
+    }
     @Test fun rejectsParentTraversalWithoutOverwritingOutsideFile() {
         val outside = temp.newFile("secret").apply { writeText("unchanged") }
         assertThrows(Exception::class.java) { extract(archive(regular("../secret"))) }

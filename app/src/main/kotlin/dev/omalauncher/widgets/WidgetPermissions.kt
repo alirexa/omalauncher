@@ -5,13 +5,15 @@ import dev.omalauncher.widgets.lang.Value
 import dev.omalauncher.widgets.lang.WidgetError
 import dev.omalauncher.widgets.runtime.Services
 import dev.omalauncher.linux.ShellResult
+import dev.omalauncher.upgrade.writeAtomically
+import dev.omalauncher.widgets.lang.Program
 import org.json.JSONObject
 import java.io.File
 
 /** Grants belong to the compiled bytes, never just the name or declared commands. */
 data class WidgetGrants(val network: Boolean = false, val files: Boolean = false, val shell: Boolean = false, val notifications: Boolean = false)
 
-internal class WidgetPermissions(private val file: File) {
+internal class WidgetPermissions(private val file: File, private val persist: (File, ByteArray) -> Unit = { f, bytes -> writeAtomically(f, bytes) }) {
     private var records = runCatching { JSONObject(file.readText()) }.getOrElse { JSONObject() }
 
     fun known(name: String, digest: String) = digest.isNotEmpty() && records.optJSONObject(name)?.optString("sha256") == digest
@@ -23,15 +25,18 @@ internal class WidgetPermissions(private val file: File) {
     }
 
     fun set(name: String, digest: String, grants: WidgetGrants?) {
-        if (grants == null) records.put(name, JSONObject().put("sha256", digest).put("blocked", true)) else records.put(name, JSONObject()
+        val next = JSONObject(records.toString())
+        if (grants == null) next.put(name, JSONObject().put("sha256", digest).put("blocked", true)) else next.put(name, JSONObject()
             .put("sha256", digest).put("network", grants.network).put("files", grants.files)
             .put("shell", grants.shell).put("notifications", grants.notifications))
-        file.parentFile?.mkdirs()
-        val tmp = File(file.path + ".tmp")
-        tmp.writeText(records.toString())
-        check(tmp.renameTo(file)) { "Cannot save widget permissions" }
+        persist(file, next.toString().toByteArray(Charsets.UTF_8))
+        records = next
     }
 }
+
+/** Linux availability does not imply command permission: file sources also need Linux. */
+internal fun requiresWidgetReview(program: Program?, grants: WidgetGrants?) =
+    program != null && (grants == null || (program.terminal && !grants.shell))
 
 /** Host-side enforcement. Shell approval explicitly trusts the entire shared Linux environment. */
 internal class PermissionServices(private val base: Services, private val grants: WidgetGrants) : Services by base {
