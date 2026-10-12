@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- Remove the capability entirely, rather than merely disabling its service. -->
+        <service
+            android:name="dev.omalauncher.widgets.runtime.MediaListener"
+            tools:node="remove" />
+    </application>
+</manifest>

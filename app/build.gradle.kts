@@ -9,6 +9,10 @@ plugins {
 val uploadKey = rootProject.file("keystore.properties").takeIf { it.exists() }
     ?.let { f -> Properties().apply { f.inputStream().use(::load) } }
 
+// Internet-sideloaded notification listeners may be blocked by Play Protect. This option
+// removes the service declaration and its runtime access for a reduced-permission APK.
+val notificationAccessEnabled = providers.gradleProperty("notificationAccess").map { it.toBooleanStrict() }.getOrElse(true)
+
 android {
     namespace = "dev.omalauncher"
     compileSdk = 37
@@ -19,11 +23,17 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = 10
-        versionName = "0.5.0"
+        versionName = if (notificationAccessEnabled) "0.5.0" else "0.5.0-no-notification-access"
+        buildConfigField("boolean", "NOTIFICATION_ACCESS_ENABLED", notificationAccessEnabled.toString())
         ndk { abiFilters += "arm64-v8a" }
     }
 
     buildFeatures { buildConfig = true }
+
+    if (!notificationAccessEnabled) {
+        sourceSets.getByName("debug").manifest.srcFile("src/noNotificationAccess/AndroidManifest.xml")
+        sourceSets.getByName("release").manifest.srcFile("src/noNotificationAccess/AndroidManifest.xml")
+    }
 
     externalNativeBuild {
         cmake { path = file("src/main/cpp/CMakeLists.txt") }

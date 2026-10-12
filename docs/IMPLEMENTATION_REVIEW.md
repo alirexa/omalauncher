@@ -16,4 +16,14 @@ Full `:app:lintRelease` now passes with zero errors, 57 warnings and two hints. 
 
 The lint follow-up reran full release lint and release assembly successfully. The 177-test result above is from the preceding implementation review; tests were not rerun for the lint annotations. Physical keyboard interaction still needs a phone test.
 
+## Reduced notification-access build
+
+A phone installation attempt showed Play Protect's sensitive-data block. The full APK declares `BIND_NOTIFICATION_LISTENER_SERVICE`; Google's [developer guidance](https://developers.google.com/android/play-protect/warning-dev-guidance?hl=en) describes this exact warning for internet-sideloaded notification listeners. That declaration is the likely trigger, though the screenshot alone cannot prove Google's complete assessment.
+
+`-PnotificationAccess=false` builds a separate APK with the listener service removed from both debug and release manifests. It disables the notification/media grant and settings link, and treats previously saved notification grants as off. Effective grants continue to scope persisted widget state. A regression test imports a grant from a full build and verifies that notification/media host operations remain blocked and the reduced build cannot save notification access back on. Launcher, Linux and microphone features are retained. The default full build remains available.
+
+Validation of the reduced build: 104 app tests and 73 owl tests passed (177 passed, no failures/errors); one optional real-rootfs test was skipped, since that image extraction was covered in the preceding review and was not repeated for this feature change. Full release lint passed with zero errors, 57 warnings and two hints. Release assembly and signature verification passed. The packaged APK was checked for absence of the listener service, notification-listener binding permission, SMS permissions and accessibility-service binding permission. Debugging is disabled and the signer matches the preceding fork previews.
+
+This removes the documented sensitive-access trigger; acceptance by Play Protect still requires testing on the phone. Keep Play Protect enabled. Phone notification widgets and other apps' media controls are unavailable in this APK. It remains an experimental build with the Linux trust limitations described below.
+
 Remaining release gate: physical Android installation, Linux boot, and permission-dialog interaction have not been tested on a phone. Do that before marking an upstream PR ready. The patch does not isolate arbitrary approved Linux commands and is not a full security audit of every third-party package or agent.

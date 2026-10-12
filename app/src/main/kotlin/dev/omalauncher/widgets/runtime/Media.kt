@@ -16,6 +16,8 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.widget.Toast
+import dev.omalauncher.BuildConfig
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Num
 import dev.omalauncher.widgets.lang.Obj
@@ -83,7 +85,7 @@ class Media(
     private val notifications = context.getSystemService(NotificationManager::class.java)
     private val main = Handler(Looper.getMainLooper())
 
-    val granted get() = notifications.isNotificationListenerAccessGranted(component)
+    val granted get() = BuildConfig.NOTIFICATION_ACCESS_ENABLED && notifications.isNotificationListenerAccessGranted(component)
 
     /** Album art by the id widgets see in `art`; only the current track's is kept. */
     private var art: Pair<String, Bitmap>? = null
@@ -243,6 +245,10 @@ class Media(
     }
 
     fun openAccessSettings() {
+        if (!BuildConfig.NOTIFICATION_ACCESS_ENABLED) {
+            Toast.makeText(context, "Notification and media access is unavailable in this build.", Toast.LENGTH_LONG).show()
+            return
+        }
         val list = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT < 30) return context.startActivity(list)
         // Straight to this app's switch where the phone supports it; some skins only have the list.

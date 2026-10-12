@@ -73,7 +73,16 @@ matches.
 
 ## Validation
 
-`./gradlew :owl:test :app:testDebugUnitTest :app:assembleRelease`
+For an APK without notification-listener access, build with
+`-PnotificationAccess=false`. This removes the service declaration, disables the
+grant/settings link, and limits stored widget grants so older notification access
+cannot be reused. Notification and music-session widgets are unavailable in that
+build; the launcher's own foreground-service notifications still work. See
+[INSTALL_SECURITY_BUILD.md](INSTALL_SECURITY_BUILD.md) for the Play Protect block
+and build/install instructions. Removing notification access does not certify
+the other application features or guarantee Play Protect acceptance.
+
+`./gradlew :owl:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease`
 
 The regression tests cover altered/wrong-key/weak signatures, the bundled key's
 fingerprint, HTTP and downgrade rejection, archive traversal and link attacks,

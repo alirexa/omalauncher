@@ -31,6 +31,29 @@ security changes and extraction of an authentic Arch image; a physical-phone
 boot/install test is still required. It does not provide isolation for arbitrary
 Linux programs or guarantee every third-party package/agent is safe.
 
+## If Play Protect blocks installation
+
+Google's [developer guidance](https://developers.google.com/android/play-protect/warning-dev-guidance?hl=en)
+describes the "This app can request access to sensitive data" installation block
+for internet-sideloaded apps declaring notification-listener access. The full
+build declares this access for notification and media widgets, even if you intend
+to leave the setting off. It is separate from permission to post the app's own
+notifications.
+
+Use the fork's **no-notification-access** APK for initial phone testing. It
+removes the listener service from the packaged manifest and disables the widget
+grant and settings link. Existing saved notification grants are treated as off;
+widget state saved with those grants is not restored. It retains launcher, Linux
+and microphone features, but cannot read the phone's notifications or show/control
+other apps' music sessions. The signing key and application ID match the other
+fork previews, so no uninstall is needed to replace a fork preview.
+
+Keep Play Protect enabled. Removing this capability addresses the documented
+permission trigger; it does not guarantee Google will accept the APK. If it is
+still blocked, record the warning and use Google's review/appeal process rather
+than bypassing the protection. Retaining notification access requires a suitable
+distribution/review route; do not assume sideloading the full APK will work.
+
 ## Building and signing your own copy
 
 Fetch the pinned, checksum-verified native dependencies:
@@ -42,6 +65,11 @@ Android SDK. Configure your own ignored `keystore.properties` as documented in
 ```
 ./gradlew :owl:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
 ```
+
+To build the APK without notification-listener access, add
+`-PnotificationAccess=false` to that command. The default retains the full build's
+notification capability. The option applies to both debug and release manifests
+and to runtime/UI capability checks.
 
 For the prepared local checkout, the private signing key is in
 `.local/omalauncher-security.jks`; signing configuration is in

@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import dev.omalauncher.BuildConfig
 import dev.omalauncher.widgets.WidgetEngine
 import dev.omalauncher.widgets.WidgetGrants
 import dev.omalauncher.widgets.WidgetSpec
@@ -31,7 +32,11 @@ internal fun WidgetPermissionsDialog(engine: WidgetEngine, spec: WidgetSpec, dis
                 BasicText("Approve only widgets you trust. Any code change requires another review.", style = Mono)
                 PermissionRow("Web requests", grants.network) { grants = grants.copy(network = !grants.network) }
                 PermissionRow("Linux files, including credentials", grants.files) { grants = grants.copy(files = !grants.files) }
-                PermissionRow("Notifications and media", grants.notifications) { grants = grants.copy(notifications = !grants.notifications) }
+                if (BuildConfig.NOTIFICATION_ACCESS_ENABLED) {
+                    PermissionRow("Notifications and media", grants.notifications) { grants = grants.copy(notifications = !grants.notifications) }
+                } else {
+                    BasicText("Notification and media access is unavailable in this build.", style = Mono.copy(fontSize = TextSize.Small))
+                }
                 PermissionRow("Linux commands and terminals", grants.shell) { grants = grants.copy(shell = !grants.shell) }
                 BasicText(
                     "Commands can read and change all Linux files, contact the internet, and affect other widgets. File and web switches cannot constrain approved commands. PRoot does not isolate untrusted programs. Turning commands off cannot undo changes or stop every program already launched.",

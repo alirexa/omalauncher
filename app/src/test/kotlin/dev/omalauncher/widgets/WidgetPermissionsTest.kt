@@ -39,6 +39,28 @@ class WidgetPermissionsTest {
         assertTrue(permissions.known("widget.owl", "one")) // explicitly blocked, including bundled widgets
         assertNull(WidgetPermissions(file).get("widget.owl", "one"))
     }
+    @Test fun reducedAccessBuildCannotReuseOrSaveAnOldNotificationGrant() {
+        val file = File(temp.root, "permissions.json")
+        val approved = WidgetGrants(network = true, files = true, shell = true, notifications = true)
+        WidgetPermissions(file, notificationAccessEnabled = true).set("widget.owl", "one", approved)
+        val reduced = WidgetPermissions(file, notificationAccessEnabled = false)
+        val effective = reduced.get("widget.owl", "one")!!
+        assertEquals(approved.copy(notifications = false), effective)
+        val spy = Spy()
+        val services = PermissionServices(spy, effective)
+        services.android("notifications")
+        services.android("media")
+        services.androidUpdates("notifications")
+        services.androidImage("media:cover")
+        services.act("notification", emptyList()) {}
+        services.act("media", emptyList()) {}
+        assertEquals(0, spy.calls)
+        assertNull(reduced.get("widget.owl", "changed-source"))
+        reduced.set("widget.owl", "one", approved)
+        assertFalse(WidgetPermissions(file, notificationAccessEnabled = true).get("widget.owl", "one")!!.notifications)
+        reduced.set("widget.owl", "one", null)
+        assertNull(reduced.get("widget.owl", "one"))
+    }
     @Test fun failedSaveDoesNotGrantAccessInMemoryOrOnRestart() {
         val file = File(temp.root, "permissions.json")
         val permissions = WidgetPermissions(file) { _, _ -> throw java.io.IOException("disk full") }

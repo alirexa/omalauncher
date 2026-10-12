@@ -1,5 +1,6 @@
 package dev.omalauncher.widgets
 
+import dev.omalauncher.BuildConfig
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Value
 import dev.omalauncher.widgets.lang.WidgetError
@@ -13,7 +14,11 @@ import java.io.File
 /** Grants belong to the compiled bytes, never just the name or declared commands. */
 data class WidgetGrants(val network: Boolean = false, val files: Boolean = false, val shell: Boolean = false, val notifications: Boolean = false)
 
-internal class WidgetPermissions(private val file: File, private val persist: (File, ByteArray) -> Unit = { f, bytes -> writeAtomically(f, bytes) }) {
+internal class WidgetPermissions(
+    private val file: File,
+    private val notificationAccessEnabled: Boolean = BuildConfig.NOTIFICATION_ACCESS_ENABLED,
+    private val persist: (File, ByteArray) -> Unit = { f, bytes -> writeAtomically(f, bytes) },
+) {
     private var records = runCatching { JSONObject(file.readText()) }.getOrElse { JSONObject() }
 
     fun known(name: String, digest: String) = digest.isNotEmpty() && records.optJSONObject(name)?.optString("sha256") == digest
@@ -21,14 +26,16 @@ internal class WidgetPermissions(private val file: File, private val persist: (F
     fun get(name: String, digest: String): WidgetGrants? {
         val r = records.optJSONObject(name) ?: return null
         if (digest.isEmpty() || r.optString("sha256") != digest || r.optBoolean("blocked")) return null
-        return WidgetGrants(r.optBoolean("network"), r.optBoolean("files"), r.optBoolean("shell"), r.optBoolean("notifications"))
+        // Effective grants also scope persisted widget state. On upgrade to a reduced-access
+        // build, do not restore state saved while the old notification grant was enabled.
+        return WidgetGrants(r.optBoolean("network"), r.optBoolean("files"), r.optBoolean("shell"), notificationAccessEnabled && r.optBoolean("notifications"))
     }
 
     fun set(name: String, digest: String, grants: WidgetGrants?) {
         val next = JSONObject(records.toString())
         if (grants == null) next.put(name, JSONObject().put("sha256", digest).put("blocked", true)) else next.put(name, JSONObject()
             .put("sha256", digest).put("network", grants.network).put("files", grants.files)
-            .put("shell", grants.shell).put("notifications", grants.notifications))
+            .put("shell", grants.shell).put("notifications", notificationAccessEnabled && grants.notifications))
         persist(file, next.toString().toByteArray(Charsets.UTF_8))
         records = next
     }
