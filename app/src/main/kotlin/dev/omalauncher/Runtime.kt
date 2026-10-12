@@ -257,6 +257,11 @@ class Runtime(
         if (linux) provisioner.sync()
     }
 
+    suspend fun setCodexCompatibility(enabled: Boolean) = withContext(Dispatchers.IO) {
+        // Share sync()'s monitor: a theme/agent refresh must not restore the old config during a toggle.
+        synchronized(provisioner) { agents.codexCompatibility.saveEnabled(enabled) }
+    }
+
     /** Whether the bridges and the Wayland server are up; they run until the process ends, even if Linux is removed. */
     private var servicesStarted = false
 

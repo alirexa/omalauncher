@@ -71,6 +71,29 @@ installed packages current. The release APK must still be obtained from a
 trusted publisher, and source review alone cannot prove an unrelated APK
 matches.
 
+## Codex on PRoot
+
+Codex can start and authenticate while its commands still fail: its Linux sandbox
+needs namespace/mount isolation that this PRoot environment cannot provide. The
+upstream launcher also supplies a `bwrap` compatibility shim, not a real sandbox.
+
+**Settings → coding agents → Codex PRoot compatibility** is off by default.
+Enabling it requires an explicit warning/confirmation and writes launcher-owned
+system defaults with `sandbox_mode = "danger-full-access"` and
+`approval_policy = "on-request"`. This disables Codex's filesystem/network sandbox;
+it does not guarantee a prompt before commands run. Codex can access the shared
+Linux environment, credentials, launcher data and network available to the app.
+Android's app isolation remains; PRoot itself is not isolation. This applies to
+Codex sessions launched for widget creation, reviews and ordinary terminals.
+Do not treat a read-only review prompt as an enforced boundary in this mode.
+
+The setting takes effect for new sessions. Close and reopen Codex when toggling;
+turning it off does not restrict existing processes. Disabling removes the
+launcher's sandbox/approval defaults while retaining the existing daemon
+workaround. Personal/project Codex configuration is untouched and may override
+system defaults; use `/permissions` or `/status` to inspect the effective mode.
+An atomic config write persists the choice; write failures are shown in the UI.
+
 ## Validation
 
 For an APK without notification-listener access, build with

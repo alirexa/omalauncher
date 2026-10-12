@@ -77,6 +77,7 @@ class AgentStore(
     private val shims get() = File(proot.home, ".local/share/mise/shims")
 
     val states = mutableStateMapOf<String, JobState>()
+    val codexCompatibility = CodexCompatibility(File(proot.rootfs, "etc/codex/config.toml"))
 
     /** Shims are symlinks to a guest path (/root/.local/bin/mise), so don't follow them from the host. */
     fun isInstalled(agent: Agent) = Files.exists(File(shims, agent.bin).toPath(), LinkOption.NOFOLLOW_LINKS)
@@ -87,6 +88,7 @@ class AgentStore(
 
     /** Reads what's on disk; call off the main thread before the UI needs [default]. */
     fun load() {
+        codexCompatibility.load()
         preferred = runCatching { preferredFile.readText().trim() }.getOrNull()
         refresh()
     }
@@ -156,7 +158,7 @@ class AgentStore(
         } else {
             listOf(
                 Managed.text(File(proot.rootfs, "etc/codex/config.toml"), Policy.Owned) {
-                    "# Written by the launcher.\n[features]\ndaemon_auto_start = false\n"
+                    codexCompatibility.content()
                 },
             )
         }

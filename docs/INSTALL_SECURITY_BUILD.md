@@ -30,7 +30,8 @@ This APK is a signed release build with debugging disabled. Tests validate the
 security changes and extraction of an authentic Arch image. The full APK was
 installed through wireless ADB on a Samsung SM-G990E running Android 16; Linux
 setup completed, the embedded shell ran commands, and Codex opened its sign-in
-screen. Authentication and widget generation remain untested. It does not provide isolation for arbitrary
+screen. Authenticated command execution was subsequently tested with the opt-in
+compatibility mode below; complete widget creation/rendering remains untested. It does not provide isolation for arbitrary
 Linux programs or guarantee every third-party package/agent is safe.
 
 ## If Play Protect blocks installation
@@ -59,6 +60,21 @@ debugging connection, without changing Play Protect settings. This retains the
 notification/music capabilities, though their permission flow and behavior still
 need testing. This result does not guarantee browser installation or acceptance
 on other phones; general distribution still needs a suitable review route.
+
+## If Codex starts but commands fail
+
+An error such as `cannot establish app-server socket mount isolation` comes from
+Codex's command sandbox, which cannot run inside this PRoot setup. Under
+**Settings → coding agents**, the optional **Codex PRoot compatibility** setting
+allows commands to run without Codex's filesystem/network sandbox. It is off by
+default; read its warning before enabling. Commands can access shared Linux
+files, credentials and launcher data, and may run without asking. Android app
+isolation remains, but PRoot is not an additional security boundary.
+
+Close and reopen Codex after changing the setting, including existing widget
+creation terminals. Personal/project settings can override the system default;
+check `/permissions` or `/status`. Disabling the setting affects new sessions
+only. See [SECURITY.md](SECURITY.md#codex-on-proot) for the trust implications.
 
 ## Building and signing your own copy
 
