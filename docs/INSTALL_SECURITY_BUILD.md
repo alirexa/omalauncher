@@ -40,7 +40,7 @@ Android SDK. Configure your own ignored `keystore.properties` as documented in
 [RELEASING.md](RELEASING.md), then run:
 
 ```
-./gradlew :owl:test :app:testDebugUnitTest :app:assembleRelease
+./gradlew :owl:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
 ```
 
 For the prepared local checkout, the private signing key is in

@@ -12,6 +12,8 @@ The review found and corrected these issues before submission:
 
 Validation: 104 app tests and 73 owl tests passed (177 total, none skipped), including authentication and extraction of the genuine signed Arch Linux ARM image. Release assembly, release-critical lint and APK signature verification passed.
 
-Full `:app:lintRelease` still reports six RestrictedApi errors in `MainActivity.dispatchKeyEvent` and `LinuxWindowActivity.dispatchKeyEvent`. Those source files and the relevant AndroidX dependency version are unchanged from upstream; these are existing baseline findings, not suppressed by this patch. Full lint is therefore not reported as passing.
+Full `:app:lintRelease` now passes with zero errors, 57 warnings and two hints. The six upstream RestrictedApi reports were caused by the class-level restriction on `androidx.core.app.ComponentActivity` being applied to the public `Activity.dispatchKeyEvent` callback inherited through `androidx.activity.ComponentActivity`. This was checked against the published source artifacts for core 1.18.0 and activity 1.13.0. Each of the two overrides now has a documented, method-scoped `@SuppressLint("RestrictedApi")`; keyboard routing and superclass dispatch are unchanged. No global lint suppression, baseline or dependency change was added.
+
+The lint follow-up reran full release lint and release assembly successfully. The 177-test result above is from the preceding implementation review; tests were not rerun for the lint annotations. Physical keyboard interaction still needs a phone test.
 
 Remaining release gate: physical Android installation, Linux boot, and permission-dialog interaction have not been tested on a phone. Do that before marking an upstream PR ready. The patch does not isolate arbitrary approved Linux commands and is not a full security audit of every third-party package or agent.

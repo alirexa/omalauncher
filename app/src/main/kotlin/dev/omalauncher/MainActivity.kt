@@ -1,5 +1,6 @@
 package dev.omalauncher
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.role.RoleManager
 import android.content.Intent
@@ -117,6 +118,9 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Launcher shortcuts (Super+key), then typing into a terminal tile that has the keyboard. Back stays the launcher's. */
+    // AndroidX core 1.18.0 restricts its internal ComponentActivity class. Lint inherits that
+    // restriction for this public Activity callback through androidx.activity.ComponentActivity.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.isMetaPressed && event.action == KeyEvent.ACTION_DOWN && shortcut(event.keyCode)) return true
         if (event.keyCode != KeyEvent.KEYCODE_BACK && runtime.terminals.active != null && runtime.keyboard.handle(event)) return true

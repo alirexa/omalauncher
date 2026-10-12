@@ -1,5 +1,6 @@
 package dev.omalauncher
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
@@ -122,6 +123,9 @@ class LinuxWindowActivity : ComponentActivity() {
         if (isFinishing && w in runtime.wm.appWindows) runtime.wm.close(w)
     }
 
+    // AndroidX core 1.18.0 restricts its internal ComponentActivity class. Lint inherits that
+    // restriction for this public Activity callback through androidx.activity.ComponentActivity.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (runtime.keyboard.handle(event)) return true
         return super.dispatchKeyEvent(event)
