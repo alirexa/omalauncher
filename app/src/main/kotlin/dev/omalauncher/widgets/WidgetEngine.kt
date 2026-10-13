@@ -98,6 +98,7 @@ class WidgetEngine(
     private val services = WidgetServices(context, proot, runtime, scope)
     private val permissions = WidgetPermissions(File(context.filesDir, "widget-permissions.json"))
     private var permissionRevision by mutableIntStateOf(0)
+    private val permissionPreviewChanges = mutableSetOf<String>()
     private val bundledHashes = context.assets.list("widgets").orEmpty().filter { it.endsWith(".owl") }.associateWith { name ->
         context.assets.open("widgets/$name").use { Review.sha256(it.readBytes()) }
     }
@@ -120,6 +121,11 @@ class WidgetEngine(
         }
         instances.remove(spec.file.name)?.stop()
         permissionRevision++
+        // The source hash is unchanged by approval/revocation. Invalidate its old preview result too.
+        File(previewDir, "${spec.file.name}.png").delete()
+        File(previewDir, "${spec.file.name}.screen.png").delete()
+        writeCheck(spec.file, spec.digest, if (spec.program == null) "error" else "ok")
+        permissionPreviewChanges += spec.file.name
         changes.trySend(Unit)
         return null
     }
@@ -409,6 +415,9 @@ class WidgetEngine(
     private fun widgetFiles() = dir.listFiles { f -> !f.name.startsWith(".") && f.extension == "owl" }.orEmpty().sortedBy { it.name }
 
     private suspend fun reload(files: List<File>) {
+        // A permission change arriving while this reload suspends belongs to the next reload.
+        val permissionChanges = permissionPreviewChanges.toSet()
+        permissionPreviewChanges.removeAll(permissionChanges)
         val old = specs.associateBy { it.file.name }
         val changed = ArrayList<String>()
         val parsed =
@@ -457,7 +466,7 @@ class WidgetEngine(
         }
         checkDependencies(parsed)
         // Not at startup, when every file compiles: only what changed while the launcher runs, which is an agent at work.
-        if (loaded) changed.forEach(::requestPreview)
+        if (loaded) (changed + permissionChanges).distinct().forEach(::requestPreview)
         loaded = true
     }
 
@@ -477,6 +486,7 @@ class WidgetEngine(
             when {
                 spec == null -> "error: the launcher hasn't loaded it"
                 spec.program == null -> "error: it doesn't compile; run owl-check $name"
+                needsReview(spec) -> "error: $WIDGET_REVIEW_REQUIRED"
                 inst == null -> "error: it isn't running" + if (waitsForLinux(spec)) ", because it needs Linux" else ""
                 parts.getOrNull(1) == "refresh" -> "ok".also { inst.refreshNow() }
                 parts.getOrNull(1) == "set" -> inst.setState(parts.getOrNull(2).orEmpty(), Json.parseOrText(parts.getOrNull(3).orEmpty()))?.let { "error: $it" } ?: "ok"
@@ -517,6 +527,7 @@ class WidgetEngine(
         val hash = hashes[name] ?: return
         val skip =
             when {
+                needsReview(spec) -> WIDGET_REVIEW_REQUIRED
                 program.terminal -> "Terminal tiles aren't previewed"
                 waitsForLinux(spec) -> "it needs Linux, which isn't installed"
                 !missing[name].isNullOrEmpty() -> "it needs ${missing[name]!!.joinToString(" ")}; install with pacman -S --needed"
@@ -544,8 +555,12 @@ class WidgetEngine(
             } finally {
                 previewing.remove(name)
             }
-        // The file may have changed while this rendered; its own preview follows.
-        if (hashes[name] != hash) return
+        // Source or grants can change while render waits for data. Never publish an obsolete instance.
+        if (hashes[name] != hash || instance(spec) !== inst) {
+            File(previewDir, "$name.png").delete()
+            File(previewDir, "$name.screen.png").delete()
+            return
+        }
         val line = if (ok) "preview $hash ${cells.first}x${cells.second} ${w}x$h" else "preview-skipped $hash rendering failed"
         writeCheck(spec.file, hash, "ok", listOfNotNull(line, screen).joinToString("\n"))
     }

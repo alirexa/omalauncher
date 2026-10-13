@@ -2,7 +2,14 @@
 
 Each `*.owl` file in this folder is a widget on the Android home screen,
 written in OWL, a small declarative language in the spirit of QML. Save a file
-and it appears within a second. Then run `owl-check <file>`:
+and its tile appears within a second. New or edited widgets are blocked until the
+user taps **review** on that tile, chooses permissions and saves. Compilation can
+succeed while the widget waits for this approval; live previews cannot run yet.
+Tell the user when approval is needed, and rerun `owl-check <file>` afterward.
+Do not try to grant permissions from Linux or bypass the review. Saving new source
+changes requires another review, so avoid rewriting the file just to retry a preview.
+
+Then run `owl-check <file>`:
 
 ```
 $ owl-check 50-memory.owl

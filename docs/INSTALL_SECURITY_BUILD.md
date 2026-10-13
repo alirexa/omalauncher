@@ -21,6 +21,8 @@ signing key, so Android will not accept it as an update to the Play Store build.
    Start with permissions off and enable only what the widget needs. File access
    includes Linux credentials. Command access trusts the entire shared Linux
    environment. Long-press a tile → **permissions** to revoke or change grants.
+   After approval, rerun `owl-check` to obtain previews. Editing the widget source
+   requires another review; a permission-review message is not a compile error.
 
 Android microphone and notification-listener access remain separate system
 permissions. Leave them off unless you need those features. Granting Android
@@ -31,7 +33,7 @@ security changes and extraction of an authentic Arch image. The full APK was
 installed through wireless ADB on a Samsung SM-G990E running Android 16; Linux
 setup completed, the embedded shell ran commands, and Codex opened its sign-in
 screen. Authenticated command execution was subsequently tested with the opt-in
-compatibility mode below; complete widget creation/rendering remains untested. It does not provide isolation for arbitrary
+compatibility mode below; a Codex-created Galaxy Buds2 widget was subsequently approved and rendered, including its tile and full-screen previews. It does not provide isolation for arbitrary
 Linux programs or guarantee every third-party package/agent is safe.
 
 ## If Play Protect blocks installation
@@ -57,8 +59,7 @@ still blocked, record the warning and use Google's review/appeal process rather
 than disabling the protection. For developer testing, the full APK was successfully
 installed with `adb install -r omalauncher-security.apk` over an authorized wireless
 debugging connection, without changing Play Protect settings. This retains the
-notification/music capabilities, though their permission flow and behavior still
-need testing. This result does not guarantee browser installation or acceptance
+notification/music capabilities, and the widget and Android notification-access permission flows were subsequently tested. Media-session metadata appeared; playback and volume actions remain untested. This result does not guarantee browser installation or acceptance
 on other phones; general distribution still needs a suitable review route.
 
 ## If Codex starts but commands fail

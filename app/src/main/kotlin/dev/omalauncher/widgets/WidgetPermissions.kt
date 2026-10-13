@@ -42,6 +42,8 @@ internal class WidgetPermissions(
 }
 
 /** Linux availability does not imply command permission: file sources also need Linux. */
+internal const val WIDGET_REVIEW_REQUIRED = "permission review required: on the phone, tap review on this widget, choose permissions and save; then rerun owl-check. Source changes require another review."
+
 internal fun requiresWidgetReview(program: Program?, grants: WidgetGrants?) =
     program != null && (grants == null || (program.terminal && !grants.shell))
 
